@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+leads.db
+leads.db-wal
+leads.db-shm
+.llm_cache/
+*.egg-info/
+.venv/

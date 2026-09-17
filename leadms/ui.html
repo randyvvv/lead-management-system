@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lead Management</title>
+<style>
+  :root { --bg:#fbfbfa; --fg:#1c1b1a; --muted:#6b6862; --line:#e4e2dd; --accent:#3d5a80; --warn:#9a4b2f; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 16px 64px; background:var(--bg); color:var(--fg);
+         font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:1180px; margin:0 auto; }
+  h1 { font-size:20px; margin:0 0 2px; }
+  .sub { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:18px; flex-wrap:wrap; }
+  .tabs button { background:none; border:0; padding:9px 14px; cursor:pointer; color:var(--muted);
+                 font-size:13px; border-bottom:2px solid transparent; }
+  .tabs button[aria-selected="true"] { color:var(--fg); border-bottom-color:var(--accent); font-weight:600; }
+  .controls { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  input, select, button.act { padding:7px 10px; border:1px solid var(--line); border-radius:6px;
+                              background:#fff; font-size:13px; color:var(--fg); }
+  input:focus, select:focus { outline:2px solid var(--accent); outline-offset:-1px; }
+  button.act { cursor:pointer; }
+  button.act:hover { background:#f2f1ee; }
+  table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--line); border-radius:8px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--muted); font-weight:600; }
+  tbody tr:last-child td { border-bottom:0; }
+  .scroll { overflow-x:auto; }
+  .pill { display:inline-block; padding:1px 7px; border-radius:10px; background:#eef0f4;
+          font-size:11px; color:var(--accent); white-space:nowrap; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; margin-bottom:20px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:8px; padding:14px; }
+  .card h3 { margin:0 0 8px; font-size:11px; text-transform:uppercase; color:var(--muted); letter-spacing:.04em; }
+  .row { display:flex; justify-content:space-between; padding:2px 0; font-size:13px; }
+  .big { font-size:26px; font-weight:600; }
+  .grp { background:#fff; border:1px solid var(--line); border-radius:8px; padding:12px 14px; margin-bottom:10px; }
+  .grp header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:10px; }
+  .reasons { font-size:12px; color:var(--muted); margin-top:6px; }
+  .reasons span { display:inline-block; margin-right:10px; }
+  .warn { color:var(--warn); }
+  .muted { color:var(--muted); }
+  pre { background:#fff; border:1px solid var(--line); border-radius:8px; padding:12px; overflow-x:auto; font-size:12px; }
+  .status { color:var(--muted); font-size:12px; margin:8px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Lead Management</h1>
+  <div class="sub" id="health">loading…</div>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="leads">Leads</button>
+    <button role="tab" aria-selected="false" data-tab="dashboard">Dashboard</button>
+    <button role="tab" aria-selected="false" data-tab="dupes">Duplicates</button>
+    <button role="tab" aria-selected="false" data-tab="extract">Source extraction</button>
+  </div>
+
+  <section id="tab-leads">
+    <div class="controls">
+      <input id="q" placeholder="Search name, company, email" size="26">
+      <select id="status"><option value="">Any status</option></select>
+      <select id="channel"><option value="">Any channel</option></select>
+      <input id="country" placeholder="Country" size="14">
+      <input id="owner" placeholder="Owner" size="14">
+      <button class="act" id="search">Search</button>
+      <button class="act" id="csv">Export CSV</button>
+    </div>
+    <div class="status" id="leadCount"></div>
+    <div class="scroll"><table>
+      <thead><tr><th>ID</th><th>Name</th><th>Company</th><th>Email</th><th>Country</th>
+                 <th>Status</th><th>Owner</th><th>Channel</th><th>Source detail</th></tr></thead>
+      <tbody id="leadRows"></tbody>
+    </table></div>
+  </section>
+
+  <section id="tab-dashboard" hidden>
+    <div class="cards" id="dashCards"></div>
+  </section>
+
+  <section id="tab-dupes" hidden>
+    <div class="controls">
+      <label class="muted">Min confidence
+        <input id="minConf" type="number" step="0.05" min="0" max="1" value="0.7" size="5"></label>
+      <button class="act" id="runDupes">Find duplicate candidates</button>
+    </div>
+    <div class="status" id="dupeStats"></div>
+    <div id="dupeGroups"></div>
+  </section>
+
+  <section id="tab-extract" hidden>
+    <div class="controls">
+      <input id="noteText" size="62"
+             value="Met her at the Singapore FinTech Festival 2026 booth, scanned our QR code.">
+      <button class="act" id="runExtract">Extract</button>
+    </div>
+    <pre id="extractOut">—</pre>
+  </section>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (v) => (v === null || v === undefined ? "" : String(v)
+  .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"));
+
+document.querySelectorAll('.tabs button').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tabs button').forEach((b) =>
+      b.setAttribute('aria-selected', String(b === btn)));
+    ['leads','dashboard','dupes','extract'].forEach((name) => {
+      $('tab-' + name).hidden = name !== btn.dataset.tab;
+    });
+    if (btn.dataset.tab === 'dashboard') loadDashboard();
+  });
+});
+
+function queryString() {
+  const params = new URLSearchParams();
+  for (const key of ['q','status','channel','country','owner']) {
+    const value = $(key).value.trim();
+    if (value) params.set(key, value);
+  }
+  return params.toString();
+}
+
+async function loadLeads() {
+  const qs = queryString();
+  const res = await fetch('/leads?limit=100' + (qs ? '&' + qs : ''));
+  const data = await res.json();
+  $('leadCount').textContent = data.total + ' matching lead(s); showing ' + data.leads.length;
+  $('leadRows').innerHTML = data.leads.map((l) => `<tr>
+    <td>${esc(l.id)}</td><td>${esc(l.display_name)}</td><td>${esc(l.company_name)}</td>
+    <td>${esc(l.email)}</td><td>${esc(l.country)}</td><td>${esc(l.status)}</td>
+    <td>${esc(l.owner)}</td><td><span class="pill">${esc(l.source_channel)}</span></td>
+    <td class="muted">${esc(l.source_detail)}</td></tr>`).join('');
+}
+
+async function loadDashboard() {
+  const data = await fetch('/dashboard').then((r) => r.json());
+  const block = (title, obj) => `<div class="card"><h3>${title}</h3>` +
+    Object.entries(obj).map(([k, v]) =>
+      `<div class="row"><span>${esc(k)}</span><b>${v}</b></div>`).join('') + '</div>';
+  $('dashCards').innerHTML =
+    `<div class="card"><h3>Total leads</h3><div class="big">${data.total_leads}</div></div>` +
+    block('By status', data.by_status) +
+    block('By source channel', data.by_source_channel) +
+    block('By owner', data.by_owner) +
+    block('Top countries', data.by_country) +
+    block('By origin', data.by_origin) +
+    (Object.keys(data.taxonomy_gaps || {}).length
+      ? `<div class="card"><h3>Taxonomy gaps</h3>` +
+        Object.entries(data.taxonomy_gaps).map(([k, v]) =>
+          `<div class="row"><span class="warn">${esc(k)}</span><b>${v}</b></div>`).join('') +
+        `<div class="reasons">Leads whose real channel has no bucket in the required taxonomy.</div></div>`
+      : '');
+}
+
+async function loadDupes() {
+  $('dupeStats').textContent = 'Scoring candidate pairs…';
+  $('dupeGroups').innerHTML = '';
+  const res = await fetch('/leads/dedupe-candidates', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({min_confidence: parseFloat($('minConf').value), limit: 60}),
+  });
+  const data = await res.json();
+  const s = data.stats;
+  $('dupeStats').innerHTML = `${s.groups} group(s) from ${s.candidate_pairs.toLocaleString()} candidate pairs ` +
+    `(vs ${s.full_pairwise_comparisons.toLocaleString()} full pairwise — ` +
+    `${(s.reduction_ratio * 100).toFixed(1)}% avoided). ` +
+    `${s.llm_adjudicated_pairs} pair(s) sent to the model. Showing top ${data.groups.length}.`;
+  $('dupeGroups').innerHTML = data.groups.map((g) => `<div class="grp">
+    <header><b>${esc(g.group_id)}</b>
+      <span class="pill">confidence ${g.confidence}</span></header>
+    <div class="scroll"><table><tbody>${g.leads.map((l) => `<tr>
+      <td>${esc(l.id)}</td><td>${esc(l.name)}</td><td>${esc(l.company)}</td>
+      <td>${esc(l.email)}</td><td>${esc(l.phone)}</td><td>${esc(l.status)}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="reasons">${g.pairs[0].reasons.map((r) =>
+      `<span class="${r.startsWith('CONFLICT') || r.startsWith('AMBIGUOUS') ? 'warn' : ''}">• ${esc(r)}</span>`
+    ).join('')}</div>
+    ${g.pairs[0].llm ? `<div class="reasons">Model: <b>${esc(g.pairs[0].llm.verdict)}</b>
+      (${esc(g.pairs[0].llm.provider || '')}) — ${esc(g.pairs[0].llm.reason)}</div>` : ''}
+  </div>`).join('') || '<p class="muted">No groups at this threshold.</p>';
+}
+
+async function runExtract() {
+  const res = await fetch('/extract-source', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({text: $('noteText').value}),
+  });
+  $('extractOut').textContent = JSON.stringify(await res.json(), null, 2);
+}
+
+$('search').addEventListener('click', loadLeads);
+$('q').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadLeads(); });
+$('csv').addEventListener('click', () => {
+  const qs = queryString();
+  window.location = '/leads/export' + (qs ? '?' + qs : '');
+});
+$('runDupes').addEventListener('click', loadDupes);
+$('runExtract').addEventListener('click', runExtract);
+
+(async function init() {
+  const [health, dash] = await Promise.all([
+    fetch('/health').then((r) => r.json()),
+    fetch('/dashboard').then((r) => r.json()),
+  ]);
+  $('health').textContent = health.leads_loaded.toLocaleString() + ' leads loaded · LLM: '
+    + health.llm.providers.join(' → ')
+    + (health.llm.model_backed ? '' : ' (offline heuristics — no API key set)');
+  for (const [key, obj] of [['status', dash.by_status], ['channel', dash.by_source_channel]]) {
+    for (const name of Object.keys(obj)) {
+      const option = document.createElement('option');
+      option.value = option.textContent = name;
+      $(key).appendChild(option);
+    }
+  }
+  loadLeads();
+})();
+</script>
+</body>
+</html>
